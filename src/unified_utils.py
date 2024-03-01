@@ -321,15 +321,18 @@ def google_chat_request(
         messages,
         generation_config=generation_config,
     )
-    #if len(response.candidates) == 0:
-    #    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
+    if len(response.candidates) == 0:
+        output = '' # TODO: what should be done here?
+        #import pdb; pdb.set_trace()
     #if len(response.candidates[0].content.parts) == 0:
     #    import pdb; pdb.set_trace()
-    candidate = response.candidates[0]
-    if candidate.finish_reason == 3:
-        output = '' # TODO: what should be done here?
     else:
-        output = candidate.content.parts[0].text
+        candidate = response.candidates[0]
+        if candidate.finish_reason != 1 and candidate.finish_reason != 2:
+            output = '' # TODO: what should be done here?
+        else:
+            output = candidate.content.parts[0].text
     contents = [output] #TODO: check stop reason? multiple candidates?
 
     return contents
