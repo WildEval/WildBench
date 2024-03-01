@@ -13,18 +13,17 @@ from eval_utils import (
     retry_handler, 
     openai_chat_request, 
 )
-from datasets import load_dataset
+from datasets import load_dataset, get_dataset_config_names
 import tiktoken
  
 encoding = None 
 
 def get_args():
-    parser = argparse.ArgumentParser() 
-    
+    parser = argparse.ArgumentParser()  
     parser.add_argument("--action", type=str, default="trial", required=True)
     parser.add_argument("--mode", type=str, default="pairwise", required=True)
     parser.add_argument("--eval_template", type=str, default="", required=True)
-    parser.add_argument("--target_model_name", type=str, required=True) 
+    parser.add_argument("--target_model_name", type=str, required=False) 
     parser.add_argument("--data_name", type=str, default=None)
     parser.add_argument("--ref_model_name", type=str, required=False)
     parser.add_argument("--eval_output_file", type=str, required=True)
@@ -42,6 +41,9 @@ def get_args():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max_tokens", type=int, default=1024)
     parser.add_argument("--overwrite", action="store_true")
+
+    
+    parser.add_argument("--seed", type=int, default=42)
     
     args = parser.parse_args() 
     if args.api_key is not None:
@@ -172,7 +174,7 @@ def shorten(text, K=-1):
     return text
  
     
-def placeholder_generation(args): 
+def placeholder_generation(args, candidates, references, histories, last_queries, checklists): 
     
     with open(args.eval_template) as f:
         eval_template = f.read() 
@@ -181,36 +183,6 @@ def placeholder_generation(args):
     results = []
     
 
-        
-    if args.mode == "pairwise":
-        bench_data = load_dataset("WildEval/WildBench", split="test")
-        target_model_data = load_dataset("WildEval/WildBench-Results", args.target_model_name, split="train")
-        ref_model_data = load_dataset("WildEval/WildBench-Results", args.ref_model_name, split="train")
-        histories = []
-        last_queries = []
-        checklists = []
-        for b, t, f in zip(bench_data, target_model_data, ref_model_data):
-            assert b["session_id"] == t["session_id"] == f["session_id"]
-            history = ""
-            checklist = b["checklist"]
-            if len(b["conversation_input"]) > 0: 
-                for x in b["conversation_input"][:-1]:
-                    if x["role"] == "user":
-                        history += "USER: " + x["content"] + "\n\n"
-                    elif x["role"] == "assistant":
-                        history += "ASSISTANT: " + x["content"] + "\n\n"
-            last_query = b["conversation_input"][-1]["content"]
-            histories.append(history)
-            last_queries.append(last_query)
-            checklists.append(checklist)
-    else:
-        raise Exception(f"Unknown mode: {args.mode}")
-
-    print(f"len(target_model_data)={len(target_model_data)}")
-    print(f"len(ref_model_data)={len(ref_model_data)}")
-
-    candidates = list(target_model_data)
-    references = list(ref_model_data)    
     assert len(candidates) == len(references)
             
     L = len(candidates)
@@ -235,10 +207,12 @@ def placeholder_generation(args):
         d["history"] = history
         d["last_query"] = last_query
         d["model_output"] = item["output"]
-        d["generator"] = args.target_model_name
+        # d["generator"] = args.target_model_name
+        d["generator"] = item["generator"]
         if args.mode == "pairwise":
             d["ref_output"] =  r 
-            d["ref_generator"] = args.ref_model_name 
+            # d["ref_generator"] = args.ref_model_name 
+            d["ref_generator"] = ref_item["generator"]
         d["eval_config"] = {"mode": args.mode, "gpt": args.model, "max_words": args.max_words_to_eval}
         
         ## Prompt composition for pairwise evaluation
@@ -270,18 +244,88 @@ def placeholder_generation(args):
         results.append(d)
     return results 
 
+def compose_eval_item(b, t, r, histories, last_queries, checklists):
+    assert b["session_id"] == t["session_id"] == r["session_id"]
+    history = ""
+    checklist = b["checklist"]
+    if len(b["conversation_input"]) > 0: 
+        for x in b["conversation_input"][:-1]:
+            if x["role"] == "user":
+                history += "USER: " + x["content"] + "\n\n"
+            elif x["role"] == "assistant":
+                history += "ASSISTANT: " + x["content"] + "\n\n"
+    last_query = b["conversation_input"][-1]["content"]
+    histories.append(history)
+    last_queries.append(last_query)
+    checklists.append(checklist)
 
 def main():
-    random.seed(42)
     args = get_args() 
+    random.seed(args.seed)
     if args.action.startswith("trial"):
         results = placeholder_generation(args)
         print(f"We have {len(results)} examples to evaluate!")
         with open(args.eval_output_file, "w") as f:
             json.dump(results, f, indent=2) 
-    elif args.action.startswith("eval"):
-        results = placeholder_generation(args)
+    elif args.action.startswith("eval"):  
+        if args.mode != "pairwise":
+            raise Exception("Not implemented yet!")
+        bench_data = load_dataset("WildEval/WildBench", split="test")
+        target_model_data = load_dataset("WildEval/WildBench-Results", args.target_model_name, split="train")
+        ref_model_data = load_dataset("WildEval/WildBench-Results", args.ref_model_name, split="train")
+        histories = []
+        last_queries = []
+        checklists = []
+        for b, t, r in zip(bench_data, target_model_data, ref_model_data):
+            compose_eval_item(b, t, r, histories, last_queries, checklists)
+        print(f"len(target_model_data)={len(target_model_data)}")
+        print(f"len(ref_model_data)={len(ref_model_data)}")
+        candidates = list(target_model_data)
+        references = list(ref_model_data)    
+        results = placeholder_generation(args, candidates, references, histories, last_queries, checklists)
         results = gpt_eval(results, args) 
+    elif args.action.startswith("arena"):
+        if args.mode != "pairwise":
+            raise Exception("Not implemented yet!")
+        print("loading the data from WildEval/WildBench")
+        bench_data = load_dataset("WildEval/WildBench", split="test")
+        print("loading the data from WildEval/WildBench-Results")
+        model_names = get_dataset_config_names("WildEval/WildBench-Results")
+        print(f"model_names={model_names}")
+        all_inference_results = {}
+        for model_name in tqdm(model_names, desc="Loading the inference results: "):
+            all_inference_results[model_name] = list(load_dataset("WildEval/WildBench-Results", model_name, split="train"))
+        eval_results = load_dataset("WildEval/WildBench-Evaluation", "all", split="train") 
+        covered_eval_ids = [x['eval_id'] for x in eval_results]
+        boosting_models = []
+        sampling_weights = {x: 1.0 for x in model_names}
+        candidates, references, histories, last_queries, checklists = [], [], [], [], []
+        # boosting some models 
+        for x in boosting_models:
+            sampling_weights[x] *= 2.0
+        for index, b in tqdm(enumerate(list(bench_data)), desc="Composing the evaluation items: "):
+            sid = b["session_id"]
+            while True:
+                sampled_model_1 = random.choices(model_names, weights=[sampling_weights[x] for x in model_names], k=1)[0]
+                model_names_without_model_1 = [x for x in model_names if x != sampled_model_1]
+                sampled_model_2 = random.choices(model_names_without_model_1, weights=[sampling_weights[x] for x in model_names_without_model_1], k=1)[0]
+                eval_id = sid + "-" + sampled_model_1 + "-" + sampled_model_2
+                eval_id_ = sid + "-" + sampled_model_2 + "-" + sampled_model_1
+                if eval_id not in covered_eval_ids and eval_id_ not in covered_eval_ids:
+                    break
+            t = all_inference_results[sampled_model_1][index]
+            r = all_inference_results[sampled_model_2][index]
+            t["generator"] = sampled_model_1
+            r["generator"] = sampled_model_2
+            candidates.append(t)
+            references.append(r)
+            compose_eval_item(b, t, r, histories, last_queries, checklists)
+            covered_eval_ids.append(eval_id)
+        # print(len(candidates), len(references), len(histories), len(last_queries), len(checklists))
+        results = placeholder_generation(args, candidates, references, histories, last_queries, checklists)
+        # print(f"We have {len(results)} examples to evaluate!")
+        results = gpt_eval(results, args)            
+                
     else:
         print("Not implemented yet!")
 
