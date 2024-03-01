@@ -8,6 +8,8 @@ from tenacity import (
     stop_after_attempt,
     wait_random_exponential,
 )  # for exponential backoff
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part, Content
  
 from datasets import load_dataset
 from tqdm import tqdm
@@ -18,6 +20,9 @@ def apply_template(chat_history, model_name):
     model_inputs = [] 
     for chats in tqdm(chat_history, desc="Applying template", disable=True):
         if "gpt-" in model_name.lower():
+            model_inputs.append("n/a") # gpt-s will be handled by another method.
+            continue
+        elif "gemini-" in model_name.lower():
             model_inputs.append("n/a") # gpt-s will be handled by another method.
             continue
         else:
@@ -275,3 +280,56 @@ def openai_chat_request(
     return contents
      
  
+def google_chat_request(
+    model: str=None,
+    generation_config: dict=None,
+    prompt: str=None,
+    messages: List[dict]=None,
+) -> List[str]:
+    """
+    Request the evaluation prompt from the Google API in chat format.
+    Args:
+        prompt (str): The encoded prompt.
+        messages (List[dict]): The messages.
+        model (str): The model to use.
+        engine (str): The engine to use.
+        temperature (float, optional): The temperature. Defaults to 0.7.
+        max_tokens (int, optional): The maximum number of tokens. Defaults to 800.
+        top_p (float, optional): The top p. Defaults to 0.95.
+        frequency_penalty (float, optional): The frequency penalty. Defaults to 0.
+        presence_penalty (float, optional): The presence penalty. Defaults to 0.
+        stop (List[str], optional): The stop. Defaults to None.
+    Returns:
+        List[str]: The list of generated evaluation prompts.
+    """
+    # Call openai api to generate aspects
+    assert prompt is not None or messages is not None, "Either prompt or messages should be provided."
+    if messages is None:
+        messages = [{"role":"user","parts": ["You are an AI assistant that helps people find information."]},
+                    {"role":"model", "parts": ["Understood."]},
+                {"role":"user","parts": [prompt]}]
+
+    #import pdb; pdb.set_trace()
+    messages = [Content(role= message["role"], parts=[Part.from_text(part) for part in message["parts"]]) for message in messages]
+
+    project_id = "grammarcorrection"
+    location = "us-central1"
+    vertexai.init(project=project_id, location=location)
+    google_model = GenerativeModel(model)
+    
+    response = google_model.generate_content(
+        messages,
+        generation_config=generation_config,
+    )
+    #if len(response.candidates) == 0:
+    #    import pdb; pdb.set_trace()
+    #if len(response.candidates[0].content.parts) == 0:
+    #    import pdb; pdb.set_trace()
+    candidate = response.candidates[0]
+    if candidate.finish_reason == 3:
+        output = '' # TODO: what should be done here?
+    else:
+        output = candidate.content.parts[0].text
+    contents = [output] #TODO: check stop reason? multiple candidates?
+
+    return contents
