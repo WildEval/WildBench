@@ -298,11 +298,14 @@ def main():
         eval_results = load_dataset("WildEval/WildBench-Evaluation", "all", split="train") 
         covered_eval_ids = [x['eval_id'] for x in eval_results]
         boosting_models = []
+        deboosting_models = ["gpt-3.5-turbo-0125"]
         sampling_weights = {x: 1.0 for x in model_names}
         candidates, references, histories, last_queries, checklists = [], [], [], [], []
         # boosting some models 
         for x in boosting_models:
             sampling_weights[x] *= 2.0
+        for x in deboosting_models:
+            sampling_weights[x] *= 0.5
         for index, b in tqdm(enumerate(list(bench_data)), desc="Composing the evaluation items: "):
             sid = b["session_id"]
             while True:

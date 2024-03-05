@@ -1,4 +1,5 @@
 run_name=${1:-"round1"}
+seed=${2:-"42"}
 gpt_eval_name="gpt-4-0125-preview"
 
 eval_folder="evaluation/results/eval=${gpt_eval_name}/arena/"
@@ -15,6 +16,7 @@ for ((start = 0, end = (($shard_size)), gpu = $start_gpu; gpu < $n_shards+$start
         --model $gpt_eval_name \
         --max_words_to_eval 1000 \
         --mode pairwise \
+        --seed $seed \
         --eval_template evaluation/eval_template.md \
         --eval_output_file $eval_file \
         --start_idx $start --end_idx $end &
@@ -27,3 +29,6 @@ wait
 python src/merge_results.py $eval_folder $run_name
 python src/upload_evaluation.py $gpt_eval_name "arena" $run_name
 # >>>> bash evaluation/run_eval.sh gpt-3.5-turbo-0125 <<<< the reference itself  
+
+# bash evaluation/run_arena.sh round1 42
+# bash evaluation/run_arena.sh round2 1337

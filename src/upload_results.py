@@ -40,4 +40,8 @@ python src/upload_results.py Mistral-7B-Instruct-v0.1
 python src/upload_results.py zephyr-7b-beta
 python src/upload_results.py gemma-7b-it
 python src/upload_results.py gemma-2b-it
+
+
+python src/upload_results.py gemini-1.0-pro
+python src/upload_results.py command
 """
