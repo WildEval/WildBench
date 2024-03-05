@@ -7,7 +7,7 @@ from tqdm import tqdm
 import json
 import os  
 from unified_utils import load_eval_data, save_outputs
-from unified_utils import openai_chat_request, retry_handler, google_chat_request
+from unified_utils import openai_chat_request, retry_handler, google_chat_request, cohere_chat_request
 from hf_models import DecoderOnlyModelManager
 
 def parse_args():
@@ -65,6 +65,8 @@ if __name__ == "__main__":
     elif args.engine == "openai":
         pass
     elif args.engine == "google":
+        pass
+    elif args.engine == "cohere":
         pass
     
     print("loading dataset!")
@@ -201,6 +203,37 @@ if __name__ == "__main__":
                 }
             }  
             result = api(**google_args) 
+            outputs.append(result) 
+            save_outputs(args, id_strs, outputs, chat_history, metadata, model_inputs, filepath) 
+
+    elif args.engine == "cohere":
+        todo_chats = chat_history[num_skipped:]
+        @retry_handler(retry_limit=10)
+        def api(**kwargs):
+            result = cohere_chat_request(**kwargs) 
+            return result
+         
+        for cur_id in tqdm(range(0, len(todo_inputs)), desc=f"Generating {args.model_name} from {args.start_index} to {args.end_index}"):
+            # input_text = todo_inputs[cur_id] 
+            chat = todo_chats[cur_id]
+            system_msg = "You are an AI assistant that helps people find information." #TODO: find equivalent system prompt
+            cohere_msg = []
+            for i, chat_item in enumerate(chat):
+                if i % 2 == 0:
+                    cohere_msg.append({"role":"User","message": chat_item})
+                else:
+                    cohere_msg.append({"role":"Chatbot","message": chat_item})
+            cohere_args = {
+                "model": args.model_pretty_name,
+                "prompt": None,
+                "system_msg": system_msg,
+                "messages": cohere_msg,
+                "top_p": args.top_p, 
+                "temperature": args.temperature,
+                "max_tokens": args.max_tokens,
+                "stop": stop_words,
+            }  
+            result = api(**cohere_args) 
             outputs.append(result) 
             save_outputs(args, id_strs, outputs, chat_history, metadata, model_inputs, filepath) 
     

@@ -1,4 +1,5 @@
-import sys  
+import sys
+import os
 import time 
 from functools import wraps
 from typing import List 
@@ -10,6 +11,7 @@ from tenacity import (
 )  # for exponential backoff
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part, Content
+import cohere
  
 from datasets import load_dataset
 from tqdm import tqdm
@@ -23,6 +25,9 @@ def apply_template(chat_history, model_name):
             model_inputs.append("n/a") # gpt-s will be handled by another method.
             continue
         elif "gemini-" in model_name.lower():
+            model_inputs.append("n/a") # gpt-s will be handled by another method.
+            continue
+        elif "cohere" in model_name.lower():
             model_inputs.append("n/a") # gpt-s will be handled by another method.
             continue
         else:
@@ -186,9 +191,12 @@ def retry_handler(retry_limit=10):
         @wraps(func)
         def wrapper(*args, **kwargs):
             retried = 0
+            flag_cohere_retry = False
             while True:
                 try:
                     sys.stdout.flush()
+                    if flag_cohere_retry:
+                        kwargs['shorten_msg_times'] = retried
                     return func(*args, **kwargs)
                 except Exception as e:
                     # if rate limit error, wait 2 seconds and retry
@@ -208,8 +216,12 @@ def retry_handler(retry_limit=10):
                             print("Invalid request, returning.")
                             raise e
                     else:
-                        print(e.__class__.__name__+":", str(e))
+                        err_msg = str(e)
+                        print(e.__class__.__name__+":", err_msg)
                         if retried < retry_limit:
+                            if 'cohere' in e.__class__.__name__.lower() and 'prompt exceeds context length' in err_msg:
+                                print ('cohere prompt length issue!')
+                                flag_cohere_retry = True
                             print(f"Retrying for the {retried + 1} time..")
                         else:
                             # finally failed
@@ -336,3 +348,70 @@ def google_chat_request(
     contents = [output] #TODO: check stop reason? multiple candidates?
 
     return contents
+
+
+def cohere_chat_request(
+    model: str=None,
+    engine: str=None,
+    system_msg: str=None,
+    temperature: float=0,
+    max_tokens: int=512,
+    top_p: float=1.0,
+    frequency_penalty: float=0,
+    presence_penalty: float=0,
+    prompt: str=None,
+    n: int=1,
+    shorten_msg_times: int=0,
+    messages: List[dict]=None,
+    stop: List[str]=None,
+    **kwargs,
+) -> List[str]:
+    """
+    Request the evaluation prompt from the OpenAI API in chat format.
+    Args:
+        prompt (str): The encoded prompt.
+        messages (List[dict]): The messages.
+        model (str): The model to use.
+        engine (str): The engine to use.
+        temperature (float, optional): The temperature. Defaults to 0.7.
+        max_tokens (int, optional): The maximum number of tokens. Defaults to 800.
+        top_p (float, optional): The top p. Defaults to 0.95.
+        frequency_penalty (float, optional): The frequency penalty. Defaults to 0.
+        presence_penalty (float, optional): The presence penalty. Defaults to 0.
+        stop (List[str], optional): The stop. Defaults to None.
+    Returns:
+        List[str]: The list of generated evaluation prompts.
+    """
+    # Call openai api to generate aspects
+    assert prompt is not None or messages is not None, "Either prompt or messages should be provided."
+    if messages is None:
+        messages = [{"role":"User","message": prompt}]
+    #import pdb; pdb.set_trace()
+    co = cohere.Client(os.getenv('COHERE_API_KEY'))
+    assert messages[-1]['role'] == 'User', messages[-1]['role']
+    #import pdb; pdb.set_trace()
+    chat_history = messages[:-1]
+    message = messages[-1]['message']
+    for _ in range(shorten_msg_times):
+        if len(chat_history) > 0:
+            if _ == shorten_msg_times - 1:
+                print ('removing past context')
+            chat_history = chat_history[2:]
+        else:
+            msg_len = len(message)
+            msg_len = msg_len // 2
+            if _ == shorten_msg_times - 1:
+                print (f'shorten msg len to {msg_len}')
+            message = message[msg_len:]
+    if len(chat_history) == 0:
+        chat_history = None
+    response = co.chat(
+         message=message,
+         preamble=system_msg,
+         chat_history=None,
+         model=model,
+         temperature=temperature,
+         p=top_p,
+         max_tokens=max_tokens,
+         prompt_truncation='AUTO') # TODO: frequency and presence penalty, stop
+    return [response.text]
