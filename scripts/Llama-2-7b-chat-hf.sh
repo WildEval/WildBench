@@ -24,6 +24,7 @@ for ((start = 0, end = (($shard_size)), gpu = $start_gpu; gpu < $n_shards+$start
         --download_dir $CACHE_DIR \
         --tensor_parallel_size $num_gpus \
         --dtype bfloat16 \
+        --model_pretty_name $model_pretty_name \
         --top_p $TOP_P --temperature $TEMP \
         --batch_size $batch_size --max_tokens $MAX_TOKENS \
         --output_folder $shards_dir/ \

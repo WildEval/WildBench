@@ -297,7 +297,8 @@ def main():
             all_inference_results[model_name] = list(load_dataset("WildEval/WildBench-Results", model_name, split="train"))
         eval_results = load_dataset("WildEval/WildBench-Evaluation", "all", split="train") 
         covered_eval_ids = [x['eval_id'] for x in eval_results]
-        must_choose_models = ["Llama-2-70b-chat-hf.nosp"] # ["gemini-1.0-pro", "command"]
+        # ["Llama-2-7b-chat-hf.nosp", "Llama-2-13b-chat-hf.nosp", "Llama-2-70b-chat-hf.nosp"] # ["gemini-1.0-pro", "command"]
+        must_choose_models = ["mistral-large-2402"] 
         boosting_models = []
         deboosting_models = [] # "gpt-3.5-turbo-0125"
         sampling_weights = {x: 1.0 for x in model_names}
