@@ -10,6 +10,8 @@ conda activate wildbench
 pip install vllm==0.3.2
 pip install openai==0.28.0
 pip install datasets tenacity
+pip install google-cloud-aiplatform
+pip install cohere
 # export HF_HOME=/path/to/your/cache_dir/
 ```
 

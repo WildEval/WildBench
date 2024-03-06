@@ -44,4 +44,6 @@ python src/upload_results.py gemma-2b-it
 
 python src/upload_results.py gemini-1.0-pro
 python src/upload_results.py command
+
+python src/upload_results.py Llama-2-70b-chat-hf.nosp
 """

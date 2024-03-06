@@ -297,8 +297,9 @@ def main():
             all_inference_results[model_name] = list(load_dataset("WildEval/WildBench-Results", model_name, split="train"))
         eval_results = load_dataset("WildEval/WildBench-Evaluation", "all", split="train") 
         covered_eval_ids = [x['eval_id'] for x in eval_results]
+        must_choose_models = ["Llama-2-70b-chat-hf.nosp"] # ["gemini-1.0-pro", "command"]
         boosting_models = []
-        deboosting_models = ["gpt-3.5-turbo-0125"]
+        deboosting_models = [] # "gpt-3.5-turbo-0125"
         sampling_weights = {x: 1.0 for x in model_names}
         candidates, references, histories, last_queries, checklists = [], [], [], [], []
         # boosting some models 
@@ -309,9 +310,12 @@ def main():
         for index, b in tqdm(enumerate(list(bench_data)), desc="Composing the evaluation items: "):
             sid = b["session_id"]
             while True:
-                sampled_model_1 = random.choices(model_names, weights=[sampling_weights[x] for x in model_names], k=1)[0]
+                if must_choose_models:
+                    sampled_model_1 = random.choices(must_choose_models, k=1)[0]
+                else:
+                    sampled_model_1 = random.choices(model_names, weights=[sampling_weights[x] for x in model_names], k=1)[0]
                 model_names_without_model_1 = [x for x in model_names if x != sampled_model_1]
-                sampled_model_2 = random.choices(model_names_without_model_1, weights=[sampling_weights[x] for x in model_names_without_model_1], k=1)[0]
+                sampled_model_2 = random.choices(model_names_without_model_1, k=1)[0]
                 eval_id = sid + "-" + sampled_model_1 + "-" + sampled_model_2
                 eval_id_ = sid + "-" + sampled_model_2 + "-" + sampled_model_1
                 if eval_id not in covered_eval_ids and eval_id_ not in covered_eval_ids:
