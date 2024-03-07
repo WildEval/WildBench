@@ -285,6 +285,9 @@ def main():
         results = placeholder_generation(args, candidates, references, histories, last_queries, checklists)
         results = gpt_eval(results, args) 
     elif args.action.startswith("arena"):
+        must_choose_models = []
+        boosting_models = [] 
+        deboosting_models = [] 
         if args.mode != "pairwise":
             raise Exception("Not implemented yet!")
         print("loading the data from WildEval/WildBench")
@@ -298,16 +301,16 @@ def main():
         eval_results = load_dataset("WildEval/WildBench-Evaluation", "all", split="train") 
         covered_eval_ids = [x['eval_id'] for x in eval_results]
         # ["Llama-2-7b-chat-hf.nosp", "Llama-2-13b-chat-hf.nosp", "Llama-2-70b-chat-hf.nosp"] # ["gemini-1.0-pro", "command"]
-        must_choose_models = ["mistral-large-2402"] 
-        boosting_models = []
-        deboosting_models = [] # "gpt-3.5-turbo-0125"
+        must_choose_models = ["claude-3-sonnet-20240229"] 
+        # boosting_models = ["claude-3-opus-20240229", "mistral-large-2402", "gemini-1.0-pro", "command"]
+        deboosting_models = ["gpt-3.5-turbo-0125", "Llama-2-7b-chat-hf", "Llama-2-13b-chat-hf", "Llama-2-70b-chat-hf", "Mistral-7B-Instruct-v0.2"] # "gpt-3.5-turbo-0125"
         sampling_weights = {x: 1.0 for x in model_names}
         candidates, references, histories, last_queries, checklists = [], [], [], [], []
         # boosting some models 
         for x in boosting_models:
             sampling_weights[x] *= 2.0
         for x in deboosting_models:
-            sampling_weights[x] *= 0.5
+            sampling_weights[x] *= 0.25
         for index, b in tqdm(enumerate(list(bench_data)), desc="Composing the evaluation items: "):
             sid = b["session_id"]
             while True:
